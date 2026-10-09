@@ -4,13 +4,24 @@
 #   bash bootstrap_models.sh --bg             (run in background, output in /tmp/models.out)
 #   bash bootstrap_models.sh --bg --wait      (at container start: first wait until the image's start script has
 #                                              moved ComfyUI to /workspace, up to 30 min; used by the Salad Command)
-# Safe to re-run: complete files are skipped, partial ones resume. Only needs curl.
+#   bash bootstrap_models.sh --images-only    (Flux Dev + Kontext only, ~35 GB; for an image-only server such as the
+#                                              jungle project's; combine with --bg / --wait, it must come first)
+#   bash bootstrap_models.sh --video-only     (LTX video models only, ~42 GB; for a server whose images are all done)
+# Safe to re-run: complete files are skipped, partial ones resume. Uses aria2c (16 connections) if present, else curl.
 # Only one copy downloads at a time: a second run (e.g. gpu_start.py over SSH) just shows the first one's progress.
-if [ "$1" = "--bg" ]; then shift; setsid nohup bash "$0" "$@" > /tmp/models.out 2>&1 < /dev/null & echo "started in background: tail -f /tmp/models.out"; exit 0; fi
+PHASES="images video"
+if [ "$1" = "--images-only" ]; then shift; PHASES=images; ONLY=--images-only; fi
+if [ "$1" = "--video-only" ]; then shift; PHASES=video; ONLY=--video-only; fi
+if [ "$1" = "--bg" ]; then shift; setsid nohup bash "$0" $ONLY "$@" > /tmp/models.out 2>&1 < /dev/null & echo "started in background: tail -f /tmp/models.out"; exit 0; fi
 if [ "$1" = "--wait" ]; then
   shift
   # valyriantech/comfyui-with-flux moves (or copies) /ComfyUI to /workspace/ComfyUI at start, then links /ComfyUI to it
   for i in $(seq 180); do [ -L /ComfyUI ] && [ -d /workspace/ComfyUI/models ] && break; sleep 10; done
+fi
+# Our GHCR image (github.com/arehmandev01-dotcom/skyfur-gpu) has models baked in as parts that /skyfur_assemble.sh
+# joins at start; ComfyUI links to them. Wait for that, so nothing baked in is downloaded again.
+if [ -f /skyfur_assemble.sh ]; then
+  for i in $(seq 90); do [ -f /tmp/skyfur_assemble.done ] && break; sleep 10; done
 fi
 LOCK=/tmp/skyfur_models.lock
 running() { [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; }
@@ -43,7 +54,7 @@ vae|LTX23_video_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_v
 vae|LTX23_audio_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_audio_vae_bf16.safetensors|364855188
 "
 
-size() { stat -c %s "$1" 2>/dev/null || echo 0; }
+size() { stat -L -c %s "$1" 2>/dev/null || echo 0; }  # -L: a baked-in model is a link to /models_baked
 
 # Files some GPU images already have in another version (valyriantech/comfyui-with-flux ships Flux Dev as
 # flux1-dev.sft + ae.sft, clip_l and t5xxl_fp8_e4m3fn in models/clip). The render tools use either (tools/comfy_models.py), so skip these.
@@ -57,14 +68,26 @@ built_in() {  # name -> prints the built-in file that replaces it, if there is o
   [ -n "$f" ] && [ -s "$f" ] && echo "$f"
 }
 
+# One Hugging Face connection is often capped at 3-6 MB/s while 16 together reach ~50 MB/s, so use aria2c
+# (16 connections per file) when the machine has it, else curl. aria2c -c also resumes a curl .part file.
+# aria2c's .part has its full size from the start (sparse), so a file is only done once its .aria2 control file is gone.
+dl() {  # out url
+  if command -v aria2c >/dev/null; then
+    aria2c -q -c -x 16 -s 16 -k 20M --file-allocation=none --max-tries=5 --retry-wait=5 -d "$(dirname "$1")" -o "$(basename "$1")" "$2"
+  else
+    curl -sSL --fail -C - --retry 5 --retry-delay 5 -o "$1" "$2"
+  fi
+}
+done_dl() { [ "$(size "$1")" = "$2" ] && [ ! -e "$1.aria2" ]; }  # file bytes
+
 fetch() {  # dir name path bytes
   local out="$M/$1/$2" part="$M/$1/$2.part"
   mkdir -p "$M/$1"
   if [ "$(size "$out")" = "$4" ]; then echo "ok    $2 (already here)"; return 0; fi
   if [ -n "$(built_in "$2")" ]; then echo "ok    $2 (skipped: the image has $(built_in "$2"))"; return 0; fi
   for try in 1 2 3 4 5; do
-    curl -sSL --fail -C - --retry 5 --retry-delay 5 -o "$part" "$HF/$3" 2>>"$LOG"
-    if [ "$(size "$part")" = "$4" ]; then mv "$part" "$out"; echo "ok    $2"; return 0; fi
+    dl "$part" "$HF/$3" 2>>"$LOG"
+    if done_dl "$part" "$4"; then mv "$part" "$out"; echo "ok    $2"; return 0; fi
     echo "retry $2 (attempt $try, have $(size "$part") of $4 bytes)"; sleep 5
   done
   echo "FAIL  $2 (see $LOG)"; return 1
@@ -74,7 +97,7 @@ fetch() {  # dir name path bytes
 # then the video models (LTX-2.3, ~42 GB) while images are already rendering.
 IMAGE_MODELS="flux1-dev-fp8.safetensors clip_l.safetensors t5xxl_fp8_e4m3fn_scaled.safetensors flux1-dev-kontext_fp8_scaled.safetensors"
 echo "Downloading SKYFUR models into $M ..."
-for phase in images video; do
+for phase in $PHASES; do
   echo "--- $phase models ---"
   while IFS='|' read -r dir name path bytes; do
     [ -z "$name" ] && continue
@@ -84,9 +107,12 @@ for phase in images video; do
   wait
   echo "--- $phase models done ---"
 done
+# older ComfyUI builds load the LTX audio VAE with LTXVAudioVAELoader, which only looks in models/checkpoints
+[ -f "$M/vae/LTX23_audio_vae_bf16.safetensors" ] && ln -sf "$M/vae/LTX23_audio_vae_bf16.safetensors" "$M/checkpoints/LTX23_audio_vae_bf16.safetensors"  # for LTXVAudioVAELoader
 echo "--- check ---"
 while IFS='|' read -r dir name path bytes; do
   [ -z "$name" ] && continue
+  case " $IMAGE_MODELS " in *" $name "*) [ "$PHASES" = video ] && continue ;; *) [ "$PHASES" = images ] && continue ;; esac
   if [ "$(size "$M/$dir/$name")" = "$bytes" ]; then echo "ok    $dir/$name"
   elif [ -n "$(built_in "$name")" ]; then echo "ok    $dir/$name (using $(built_in "$name"))"
   else echo "MISSING $dir/$name"; fi

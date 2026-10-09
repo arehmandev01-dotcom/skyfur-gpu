@@ -1,0 +1,30 @@
+name: build-image
+# Builds ghcr.io/<owner>/comfyui-flux-kontext:kontext = valyriantech/comfyui-with-flux + Flux Kontext baked in,
+# and our start script that downloads the LTX video models at start. See image/build.sh.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['image/**', 'bootstrap_models.sh', '.github/workflows/build-image.yml']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/share/swift
+          df -h / /mnt
+      - name: Install tools
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q aria2 pigz
+          curl -sSL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz | sudo tar xz -C /usr/local/bin crane
+          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push
+        run: bash image/build.sh
