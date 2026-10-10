@@ -1,6 +1,6 @@
 name: build-image
-# Builds ghcr.io/<owner>/comfyui-flux-kontext:kontext = valyriantech/comfyui-with-flux + Flux Kontext baked in,
-# and our start script that downloads the LTX video models at start. See image/build.sh.
+# Builds ghcr.io/<owner>/comfyui-flux-kontext:slim = yanwk/comfyui-boot:cu128-slim + Flux Dev fp8 and Flux Kontext
+# fp8 baked in (~35.5 GB), and a start-up block that downloads t5/clip_l and the LTX video models. See image/build.sh.
 on:
   workflow_dispatch:
   push:
