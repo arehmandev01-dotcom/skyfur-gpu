@@ -1,8 +1,15 @@
 name: build-image
-# Builds ghcr.io/<owner>/comfyui-flux-kontext:slim = yanwk/comfyui-boot:cu128-slim + Flux Dev fp8 and Flux Kontext
-# fp8 baked in (~35.5 GB), and a start-up block that downloads t5/clip_l and the LTX video models. See image/build.sh.
+# Builds ghcr.io/<owner>/comfyui-flux-kontext, one job per tag, all on yanwk/comfyui-boot:cu128-slim (see image/build.sh):
+#   :slim        Flux Dev fp8 + Flux Kontext fp8 baked in (~35.5 GB); t5/clip_l and the LTX video models download at start
+#   :video       LTX-2.3 transformer, text projection and both VAEs baked in (~35.5 GB); only gemma (13.2 GB) downloads at start
+#   :video-full  every LTX-2.3 model baked in (~48.8 GB), nothing to download; may be too large for Salad, then use :video
+# The video images start with SKYFUR_MODELS=video, so they never download the image models.
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Build only this tag (all, slim, video, video-full)'
+        default: all
   push:
     branches: [main]
     paths: ['image/**', 'bootstrap_models.sh', '.github/workflows/build-image.yml']
@@ -14,17 +21,40 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: slim
+            models: flux1-dev-fp8.safetensors flux1-dev-kontext_fp8_scaled.safetensors
+            env: ''
+          - tag: video
+            models: ltx-2.3-22b-distilled_transformer_only_fp8_input_scaled_v3.safetensors ltx-2.3_text_projection_bf16.safetensors LTX23_video_vae_bf16.safetensors LTX23_audio_vae_bf16.safetensors
+            env: SKYFUR_MODELS=video
+          - tag: video-full
+            models: ltx-2.3-22b-distilled_transformer_only_fp8_input_scaled_v3.safetensors gemma_3_12B_it_fp8_scaled.safetensors ltx-2.3_text_projection_bf16.safetensors LTX23_video_vae_bf16.safetensors LTX23_audio_vae_bf16.safetensors
+            env: SKYFUR_MODELS=video
+    env:
+      WANTED: ${{ github.event.inputs.only == '' || github.event.inputs.only == 'all' || github.event.inputs.only == matrix.tag }}
     steps:
       - uses: actions/checkout@v4
+        if: env.WANTED == 'true'
       - name: Free disk space
+        if: env.WANTED == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/share/swift
           df -h / /mnt
       - name: Install tools
+        if: env.WANTED == 'true'
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q aria2 pigz
           curl -sSL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz | sudo tar xz -C /usr/local/bin crane
           echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Build and push
+        if: env.WANTED == 'true'
+        env:
+          TAG: ${{ matrix.tag }}
+          MODELS: ${{ matrix.models }}
+          IMAGE_ENV: ${{ matrix.env }}
         run: bash image/build.sh
