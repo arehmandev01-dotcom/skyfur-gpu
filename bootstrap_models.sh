@@ -7,11 +7,14 @@
 #   bash bootstrap_models.sh --images-only    (Flux Dev + Kontext only, ~35 GB; for an image-only server such as the
 #                                              jungle project's; combine with --bg / --wait, it must come first)
 #   bash bootstrap_models.sh --video-only     (LTX video models only, ~42 GB; for a server whose images are all done)
+#   bash bootstrap_models.sh --music-only     (ACE-Step 1.5 turbo song models only, ~18 GB; the :music image has them
+#                                              baked in. The default run, images + video, never downloads these)
 # Safe to re-run: complete files are skipped, partial ones resume. Uses aria2c (16 connections) if present, else curl.
 # Only one copy downloads at a time: a second run (e.g. gpu_start.py over SSH) just shows the first one's progress.
 PHASES="images video"
 if [ "$1" = "--images-only" ]; then shift; PHASES=images; ONLY=--images-only; fi
 if [ "$1" = "--video-only" ]; then shift; PHASES=video; ONLY=--video-only; fi
+if [ "$1" = "--music-only" ]; then shift; PHASES=music; ONLY=--music-only; fi
 if [ "$1" = "--bg" ]; then shift; setsid nohup bash "$0" $ONLY "$@" > /tmp/models.out 2>&1 < /dev/null & echo "started in background: tail -f /tmp/models.out"; exit 0; fi
 if [ "$1" = "--wait" ]; then
   shift
@@ -52,6 +55,11 @@ text_encoders|ltx-2.3_text_projection_bf16.safetensors|Kijai/LTX2.3_comfy/resolv
 text_encoders|gemma_3_12B_it_fp8_scaled.safetensors|Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors|13205434827
 vae|LTX23_video_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_video_vae_bf16.safetensors|1452258578
 vae|LTX23_audio_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_audio_vae_bf16.safetensors|364855188
+diffusion_models|acestep_v1.5_turbo.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors|4787825604
+text_encoders|qwen_0.6b_ace15.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors|1191588248
+text_encoders|qwen_4b_ace15.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors|8379154232
+text_encoders|qwen_1.7b_ace15.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_1.7b_ace15.safetensors|3708523360
+vae|ace_1.5_vae.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/vae/ace_1.5_vae.safetensors|337431732
 "
 
 size() { stat -L -c %s "$1" 2>/dev/null || echo 0; }  # -L: a baked-in model is a link to /models_baked
@@ -96,13 +104,19 @@ fetch() {  # dir name path bytes
 # Image models first (Flux Dev + text encoders + Kontext, ~35 GB) so character and frame work can start,
 # then the video models (LTX-2.3, ~42 GB) while images are already rendering.
 IMAGE_MODELS="flux1-dev-fp8.safetensors clip_l.safetensors t5xxl_fp8_e4m3fn_scaled.safetensors flux1-dev-kontext_fp8_scaled.safetensors"
+# ACE-Step 1.5 turbo (tools/ace_song.py): only with --music-only
+MUSIC_MODELS="acestep_v1.5_turbo.safetensors qwen_0.6b_ace15.safetensors qwen_4b_ace15.safetensors qwen_1.7b_ace15.safetensors ace_1.5_vae.safetensors"
+group_of() {  # name -> images | video | music
+  case " $IMAGE_MODELS " in *" $1 "*) echo images; return ;; esac
+  case " $MUSIC_MODELS " in *" $1 "*) echo music; return ;; esac
+  echo video
+}
 echo "Downloading SKYFUR models into $M ..."
 for phase in $PHASES; do
   echo "--- $phase models ---"
   while IFS='|' read -r dir name path bytes; do
     [ -z "$name" ] && continue
-    case " $IMAGE_MODELS " in *" $name "*) group=images ;; *) group=video ;; esac
-    [ "$group" = "$phase" ] && fetch "$dir" "$name" "$path" "$bytes" &
+    [ "$(group_of "$name")" = "$phase" ] && fetch "$dir" "$name" "$path" "$bytes" &
   done <<< "$LIST"
   wait
   echo "--- $phase models done ---"
@@ -112,7 +126,7 @@ done
 echo "--- check ---"
 while IFS='|' read -r dir name path bytes; do
   [ -z "$name" ] && continue
-  case " $IMAGE_MODELS " in *" $name "*) [ "$PHASES" = video ] && continue ;; *) [ "$PHASES" = images ] && continue ;; esac
+  case " $PHASES " in *" $(group_of "$name") "*) ;; *) continue ;; esac
   if [ "$(size "$M/$dir/$name")" = "$bytes" ]; then echo "ok    $dir/$name"
   elif [ -n "$(built_in "$name")" ]; then echo "ok    $dir/$name (using $(built_in "$name"))"
   else echo "MISSING $dir/$name"; fi

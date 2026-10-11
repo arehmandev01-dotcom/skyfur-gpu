@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds ghcr.io/<owner>/comfyui-flux-kontext:<TAG> on a GitHub Actions runner (run by .github/workflows/build-image.yml,
-# one job per tag: slim = image models, video / video-full = LTX video models; MODELS and IMAGE_ENV come from there).
+# one job per tag: slim = image models, video / video-full = LTX video models, music = ACE-Step song models;
+# MODELS and IMAGE_ENV come from there).
 # No docker build: crane adds new layers on top of yanwk/comfyui-boot:cu128-slim (6.4 GB, the image the octopus
 # server runs) straight in the registries. Each baked-in model is downloaded once, split into 4 GB parts (GHCR's
 # limit is 10 GB per layer) and added one part per layer. A last layer adds our scripts and the links ComfyUI uses.
@@ -17,7 +18,7 @@ DEST=ghcr.io/$OWNER/comfyui-flux-kontext
 WORK=$DEST:build-${TAG:-slim}  # one work tag per job, so the jobs can run at the same time
 TAG=${TAG:-slim}
 MODELS=${MODELS:-flux1-dev-fp8.safetensors flux1-dev-kontext_fp8_scaled.safetensors}  # file names from the LIST in bootstrap_models.sh
-IMAGE_ENV=${IMAGE_ENV:-}  # e.g. SKYFUR_MODELS=video: the image's default (a Salad env var still overrides it)
+IMAGE_ENV=${IMAGE_ENV:-}  # e.g. SKYFUR_MODELS=video: the image's defaults (a Salad env var still overrides them), several split by ;
 HERE=$(cd "$(dirname "$0")" && pwd)
 LIST=$(sed -n '/^LIST="/,/^"/p' "$HERE/../bootstrap_models.sh" | grep '|')
 
@@ -67,7 +68,7 @@ unzip -o -q "$T/aria2.zip" aria2c -d "$FINAL/usr/local/bin" && chmod 755 "$FINAL
 (cd "$FINAL" && tar --owner=0 --group=0 -cf - $(ls -A) | tar -tvf - | grep -v '^d')
 (cd "$FINAL" && tar --owner=0 --group=0 -cf - $(ls -A)) | pigz -1 > "$T/layer.tgz"
 crane append -b "$cur" -f "$T/layer.tgz" -t "$WORK"
-ENVFLAG=(); [ -n "$IMAGE_ENV" ] && ENVFLAG=(--env "$IMAGE_ENV")
+ENVFLAG=(); IFS=';' read -ra ENVS <<< "$IMAGE_ENV"; for e in "${ENVS[@]}"; do [ -n "$e" ] && ENVFLAG+=(--env "$e"); done
 crane mutate "$WORK" "${ENVFLAG[@]}" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$DEST:$TAG"
 echo "Built $DEST:$TAG"
 crane manifest "$DEST:$TAG" | python3 -c "import sys,json;m=json.load(sys.stdin);print(len(m['layers']),'layers,',round(sum(l['size'] for l in m['layers'])/1e9,1),'GB compressed')"

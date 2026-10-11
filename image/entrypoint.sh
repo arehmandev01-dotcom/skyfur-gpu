@@ -3,7 +3,9 @@
 # except for the "SKYFUR" block, which starts two background jobs before ComfyUI:
 # 1. join the baked-in model parts (/models_baked) into whole files (~2 min)
 # 2. download every model that is not baked in (t5 + clip_l for Kontext, then the LTX video models), with aria2c
-#    SKYFUR_MODELS=all (default) | images | video | none; progress in /tmp/models.out
+#    SKYFUR_MODELS=all (default) | images | video | music | none; progress in /tmp/models.out
+# and one change to the ComfyUI command: SKYFUR_COMFY_ARGS is added to it (the :music image sets
+# "--disable-xformers --use-pytorch-cross-attention": xformers fails on ACE-Step's attention mask on the RTX 5090)
 
 set -e
 
@@ -45,6 +47,7 @@ case "${SKYFUR_MODELS:-all}" in
   none) ;;
   images) bash /bootstrap_models.sh --images-only --bg || true ;;
   video) bash /bootstrap_models.sh --video-only --bg || true ;;
+  music) bash /bootstrap_models.sh --music-only --bg || true ;;
   *) bash /bootstrap_models.sh --bg || true ;;
 esac
 
@@ -74,4 +77,4 @@ export PIP_ROOT_USER_ACTION=ignore
 
 cd /root
 
-python3 ./ComfyUI/main.py --listen --port 8188 ${CLI_ARGS}
+python3 ./ComfyUI/main.py --listen --port 8188 ${SKYFUR_COMFY_ARGS} ${CLI_ARGS}

@@ -3,12 +3,13 @@ name: build-image
 #   :slim        Flux Dev fp8 + Flux Kontext fp8 baked in (~35.5 GB); t5/clip_l and the LTX video models download at start
 #   :video       LTX-2.3 transformer, text projection and both VAEs baked in (~35.5 GB); only gemma (13.2 GB) downloads at start
 #   :video-full  every LTX-2.3 model baked in (~48.8 GB), nothing to download; may be too large for Salad, then use :video
-# The video images start with SKYFUR_MODELS=video, so they never download the image models.
+#   :music       ACE-Step 1.5 turbo song models baked in (~25 GB), nothing to download; ComfyUI starts without xformers
+# The video images start with SKYFUR_MODELS=video, so they never download the image models; :music likewise with music.
 on:
   workflow_dispatch:
     inputs:
       only:
-        description: 'Build only this tag (all, slim, video, video-full)'
+        description: 'Build only this tag (all, slim, video, video-full, music)'
         default: all
   push:
     branches: [main]
@@ -35,6 +36,9 @@ jobs:
           - tag: video-full
             models: ltx-2.3-22b-distilled_transformer_only_fp8_input_scaled_v3.safetensors gemma_3_12B_it_fp8_scaled.safetensors ltx-2.3_text_projection_bf16.safetensors LTX23_video_vae_bf16.safetensors LTX23_audio_vae_bf16.safetensors
             env: SKYFUR_MODELS=video
+          - tag: music
+            models: acestep_v1.5_turbo.safetensors qwen_0.6b_ace15.safetensors qwen_4b_ace15.safetensors qwen_1.7b_ace15.safetensors ace_1.5_vae.safetensors
+            env: SKYFUR_MODELS=music;SKYFUR_COMFY_ARGS=--disable-xformers --use-pytorch-cross-attention
     env:
       WANTED: ${{ github.event.inputs.only == '' || github.event.inputs.only == 'all' || github.event.inputs.only == matrix.tag }}
     steps:

@@ -30,3 +30,17 @@ The same base and start-up, with the **LTX-2.3 video models** baked in instead o
 Try `:video-full` first; if Salad refuses it, use `:video`. Salad settings are the same as for `:slim` (port `8188`, auth off, `CLI_ARGS` = `--listen ::`, no command). Set `SKYFUR_MODELS=all` to also download the image models.
 
 All three tags are built by the one workflow. To rebuild only one, run it from the Actions tab with `only` = `slim`, `video` or `video-full`.
+
+## Music image `ghcr.io/arehmandev01-dotcom/comfyui-flux-kontext:music`
+
+The same base and start-up, with the **ACE-Step 1.5 turbo song models** baked in (turbo model, Qwen 0.6B / 1.7B / 4B text encoders, VAE; ~18 GB of models, ~25 GB image), so nothing downloads at start. It makes sung songs and music for `tools/ace_song.py`.
+
+The image starts with `SKYFUR_MODELS=music` and `SKYFUR_COMFY_ARGS=--disable-xformers --use-pytorch-cross-attention`: xformers fails on ACE-Step's attention mask on the RTX 5090, so this server runs it without xformers and songs queue normally, with no SSH (`ace_run.py` / `--ssh` are not needed).
+
+Salad settings are the same as for `:slim` (port `8188`, auth off, `CLI_ARGS` = `--listen ::`, no command). Then, from the laptop:
+
+```
+python tools/ace_song.py <output_prefix> <song.txt> 1 2 3 --seconds 150 --bpm 110
+```
+
+with the server's URL in the project's `server_url.txt` (or `SKYFUR_SERVER`). Build only this tag from the Actions tab with `only` = `music`.
