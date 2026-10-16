@@ -55,6 +55,7 @@ text_encoders|ltx-2.3_text_projection_bf16.safetensors|Kijai/LTX2.3_comfy/resolv
 text_encoders|gemma_3_12B_it_fp8_scaled.safetensors|Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors|13205434827
 vae|LTX23_video_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_video_vae_bf16.safetensors|1452258578
 vae|LTX23_audio_vae_bf16.safetensors|Kijai/LTX2.3_comfy/resolve/main/vae/LTX23_audio_vae_bf16.safetensors|364855188
+latent_upscale_models|ltx-2.3-spatial-upscaler-x2-1.1.safetensors|Lightricks/LTX-2.3/resolve/main/ltx-2.3-spatial-upscaler-x2-1.1.safetensors|995743560
 diffusion_models|acestep_v1.5_turbo.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors|4787825604
 text_encoders|qwen_0.6b_ace15.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors|1191588248
 text_encoders|qwen_4b_ace15.safetensors|Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors|8379154232
