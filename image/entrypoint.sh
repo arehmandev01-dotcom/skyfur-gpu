@@ -6,6 +6,7 @@
 #    SKYFUR_MODELS=all (default) | images | video | music | none; progress in /tmp/models.out
 # and one change to the ComfyUI command: SKYFUR_COMFY_ARGS is added to it (the :music image sets
 # "--disable-xformers --use-pytorch-cross-attention": xformers fails on ACE-Step's attention mask on the RTX 5090)
+# and --disable-pinned-memory always (user 2026-10-16, for speed: Salad caps locked memory, so pins fail and offloading crawls)
 
 set -e
 
@@ -77,4 +78,4 @@ export PIP_ROOT_USER_ACTION=ignore
 
 cd /root
 
-python3 ./ComfyUI/main.py --listen --port 8188 ${SKYFUR_COMFY_ARGS} ${CLI_ARGS}
+python3 ./ComfyUI/main.py --listen --port 8188 --disable-pinned-memory ${SKYFUR_COMFY_ARGS} ${CLI_ARGS}
